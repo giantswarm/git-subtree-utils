@@ -70,14 +70,14 @@ for CONFIG_NAME in $configs; do
 
 	set -e
 	if [[ "$remote_ok" = false ]]; then
-		echo "Adding remote upstream"
-		git remote add upstream "$REMOTE_URL"
+		echo "Adding remote $UPSTREAM_NAME"
+		git remote add "$UPSTREAM_NAME" "$REMOTE_URL"
 	fi
 
 	# detect latest tags
-	git fetch upstream --tags
-	latest_upstream_tag=$(git tag --sort=-creatordate | grep "$(git ls-remote --tags upstream | cut -f3 -d"/")" | head -n 1)
-	echo "Latest upstream tag: $latest_upstream_tag"
+	git fetch "$UPSTREAM_NAME" --tags
+	latest_upstream_tag=$(git tag --sort=-creatordate | grep "$(git ls-remote --tags "$UPSTREAM_NAME" | cut -f3 -d"/")" | head -n 1)
+	echo "Latest upstream tag in $UPSTREAM_NAME: $latest_upstream_tag"
 
 	latest_merged_tag=$(git log | awk "/Merge '${DOWN_DIR//\//\\/}' from tag '(.+)'/{gsub(/'/, \"\", \$0);print \$5;exit}")
 	if [[ -z "$latest_merged_tag" ]]; then
