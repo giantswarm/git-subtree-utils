@@ -54,6 +54,7 @@ for CONFIG_NAME in $configs; do
 
 	UPSTREAM_NAME="upstream-${CONFIG_NAME}"
 
+	set +e
 	remote_log=$(git remote show "$UPSTREAM_NAME")
 	remote_status=$?
 	remote_ok=false
