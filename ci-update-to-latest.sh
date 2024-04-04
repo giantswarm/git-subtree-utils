@@ -1,8 +1,8 @@
-#!/bin/bash
+#!/bin/bash -x
 
 BIN_NAME=$(basename "$0")
 function help() {
-	echo "Usage: $BIN_NAME [REPO_NAME]"
+	echo "Usage: $BIN_NAME"
 	echo
 	echo "  Requires a config file named 'subtree-cfg.ini' with at least one config section with the following structure:"
 	echo "    [CONFIG_SECTION_NAME]"
@@ -11,11 +11,10 @@ function help() {
 	echo "    DOWN_DIR=X: the directory in the current repository to put the subtree in"
 }
 
-if [[ $# -ne 2 ]]; then
+if [[ $# -ne 0 ]]; then
 	help
 	exit 1
 fi
-REPO_NAME=$1
 
 declare -r CFG_FILE_NAME="subtree-cfg.ini"
 # parse config options
@@ -57,7 +56,7 @@ for CONFIG_NAME in $configs; do
 			exit 1
 		fi
 		remote_ok=true
-		echo "Detected correct remote upstream URL: $remote_url"
+		echo "Detected correct remote with upstream URL: $remote_url"
 	fi
 
 	set -e
@@ -66,25 +65,26 @@ for CONFIG_NAME in $configs; do
 		git remote add upstream "$REMOTE_URL"
 	fi
 
-	# detect latest tag
-	git checkout -b upstream-sync
+	# detect latest tags
 	git fetch upstream --tags
 	latest_upstream_tag=$(git tag --sort=-creatordate | grep "$(git ls-remote --tags upstream | cut -f3 -d"/")" | head -n 1)
 	echo "Latest upstream tag: $latest_upstream_tag"
 
-	latest_merged_tag=$(git log | awk "/Merge '$DOWN_DIR' from tag '(.+)'/{gsub(/'/, \"\", \$0);print \$5;exit}")
-	if [[ -n "$latest_merged_tag" ]]; then
+	latest_merged_tag=$(git log | awk "/Merge '${DOWN_DIR//\//\\/}' from tag '(.+)'/{gsub(/'/, \"\", \$0);print \$5;exit}")
+	if [[ -z "$latest_merged_tag" ]]; then
 		echo "Could not detect the last merged tag for local directory '$DOWN_DIR'. Exiting." >&2
 		exit 2
 	fi
+	echo "Latest merged tag: $latest_merged_tag"
 
 	# TODO: detect/configure squash
 
 	# run the script with the latest tag
+	git checkout -b upstream-sync
 	echo "Running git-subtree-update.sh with the latest tag"
 	SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 	set +e
-	"$SCRIPT_DIR"/new-git-subtree-update.sh \
+	"$SCRIPT_DIR"/git-subtree-update.sh \
 		-n "$CONFIG_NAME" \
 		-r "$REMOTE_URL" \
 		-t "$latest_upstream_tag" \
@@ -104,7 +104,7 @@ for CONFIG_NAME in $configs; do
 	if git status --short | grep "^UU "; then
 		echo "Conflicts detected, forcing merge commit."
 		git add -A
-		git commit -m "Merge '$DOWN_DIR' from tag '$latest_upstream_tag'"
+		git commit --no-verify -m "Merge '$DOWN_DIR' from tag '$latest_upstream_tag'"
 	fi
 
 done
@@ -121,7 +121,6 @@ set -e
 git push --set-upstream origin upstream-sync
 repo=$(gh repo view --json nameWithOwner -q ".nameWithOwner")
 echo "Detected repository: $repo"
-gh repo view --json url
 gh pr create --title "Automated update to tag $latest_upstream_tag" \
 	--body "This PR updates the chart using git subtree to the latest tag in the upstream repository." \
 	--base main \
