@@ -115,6 +115,7 @@ for CONFIG_NAME in $configs; do
 		echo "Conflicts detected, forcing merge commit."
 		git add -A
 		git commit --no-verify -m "Merge '$DOWN_DIR' from tag '$latest_upstream_tag'"
+		git notes add -f -m "upstream sync: URL='$REMOTE_URL' SYNC_REF='$latest_upstream_tag' REMOTE_DIR='$REMOTE_DIR' DOWN_DIR='$DOWN_DIR'"
 	fi
 
 done
