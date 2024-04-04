@@ -11,9 +11,18 @@ function help() {
 	echo "    DOWN_DIR=X: the directory in the current repository to put the subtree in"
 }
 
-if [[ $# -ne 0 ]]; then
+if [[ $# -ne 0 && $# -ne 1 ]]; then
 	help
 	exit 1
+fi
+
+if [[ $# -eq 1 && ($1 == "-h" || $1 == "--help") ]]; then
+	help
+	exit 0
+fi
+
+if [[ $# -eq 1 ]]; then
+	REPO_NAME=$1
 fi
 
 declare -r CFG_FILE_NAME="subtree-cfg.ini"
@@ -119,11 +128,15 @@ set +e
 git push origin --delete upstream-sync
 set -e
 git push --set-upstream origin upstream-sync
-repo=$(gh repo view --json nameWithOwner -q ".nameWithOwner")
-echo "Detected repository: $repo"
+if [[ -z "$REPO_NAME" ]]; then
+	REPO_NAME=$(gh repo view --json nameWithOwner -q ".nameWithOwner")
+	echo "Detected repository name: $REPO_NAME"
+else
+	echo "Using repository name: $REPO_NAME"
+fi
 gh pr create --title "Automated update to tag $latest_upstream_tag" \
 	--body "This PR updates the chart using git subtree to the latest tag in the upstream repository." \
 	--base main \
 	--head upstream-sync \
-	-R "$repo"
+	-R "$REPO_NAME"
 echo "Done"
