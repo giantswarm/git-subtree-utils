@@ -51,9 +51,16 @@ for CONFIG_NAME in $configs; do
 	REMOTE_URL=${cfg["REMOTE_URL"]}
 	REMOTE_DIR=${cfg["REMOTE_DIR"]}
 	DOWN_DIR=${cfg["DOWN_DIR"]}
+	if [[ -n "${cfg["SQUASH"]}" && "${cfg["SQUASH"],,}" == "true" ]]; then
+		OPTS="-s"
+	fi
+
+	if [[ -x "pre-hook.sh" ]]; then
+		echo "Running pre-hook.sh"
+		./pre-hook.sh "$CONFIG_NAME" "$REMOTE_URL" "$REMOTE_DIR" "$DOWN_DIR"
+	fi
 
 	UPSTREAM_NAME="upstream-${CONFIG_NAME}"
-
 	set +e
 	remote_log=$(git remote show "$UPSTREAM_NAME")
 	remote_status=$?
@@ -87,8 +94,6 @@ for CONFIG_NAME in $configs; do
 	fi
 	echo "Latest merged tag: $latest_merged_tag"
 
-	# TODO: detect/configure squash
-
 	# run the script with the latest tag
 	git checkout -b upstream-sync
 	echo "Running git-subtree-update.sh with the latest tag"
@@ -101,7 +106,8 @@ for CONFIG_NAME in $configs; do
 		-d "$REMOTE_DIR" \
 		-l "$DOWN_DIR" \
 		-m "$latest_merged_tag" \
-		-g
+		-g \
+		"$OPTS"
 	set -e
 
 	if git diff-index --quiet HEAD --; then
@@ -111,8 +117,13 @@ for CONFIG_NAME in $configs; do
 
 	SOURCE_ALTERED=true
 
-	if git status --short | grep "^UU "; then
-		echo "Conflicts detected, forcing merge commit."
+	if [[ -x "post-hook.sh" ]]; then
+		echo "Running post-hook.sh"
+		./post-hook.sh "$CONFIG_NAME" "$REMOTE_URL" "$REMOTE_DIR" "$DOWN_DIR"
+	fi
+
+	if git status --short | grep -E "^( M|UU) "; then
+		echo "Conflicts or hook created changes detected, forcing merge commit."
 		git add -A
 		git commit --no-verify -m "Merge '$DOWN_DIR' from tag '$latest_upstream_tag'"
 		git notes add -f -m "upstream sync: URL='$REMOTE_URL' SYNC_REF='$latest_upstream_tag' REMOTE_DIR='$REMOTE_DIR' DOWN_DIR='$DOWN_DIR'"
@@ -125,20 +136,20 @@ if [[ $SOURCE_ALTERED = false ]]; then
 	exit 0
 fi
 
-echo "Creating PR on GitHub"
-set +e
-git push origin --delete upstream-sync
-set -e
-git push --set-upstream origin upstream-sync
-if [[ -z "$REPO_NAME" ]]; then
-	REPO_NAME=$(gh repo view --json nameWithOwner -q ".nameWithOwner")
-	echo "Detected repository name: $REPO_NAME"
-else
-	echo "Using repository name: $REPO_NAME"
-fi
-gh pr create --title "Automated update to tag $latest_upstream_tag" \
-	--body "This PR updates the chart using git subtree to the latest tag in the upstream repository." \
-	--base main \
-	--head upstream-sync \
-	-R "$REPO_NAME"
-echo "Done"
+# echo "Creating PR on GitHub"
+# set +e
+# git push origin --delete upstream-sync
+# set -e
+# git push --set-upstream origin upstream-sync
+# if [[ -z "$REPO_NAME" ]]; then
+# 	REPO_NAME=$(gh repo view --json nameWithOwner -q ".nameWithOwner")
+# 	echo "Detected repository name: $REPO_NAME"
+# else
+# 	echo "Using repository name: $REPO_NAME"
+# fi
+# gh pr create --title "Automated update to tag $latest_upstream_tag" \
+# 	--body "This PR updates the chart using git subtree to the latest tag in the upstream repository." \
+# 	--base main \
+# 	--head upstream-sync \
+# 	-R "$REPO_NAME"
+# echo "Done"
