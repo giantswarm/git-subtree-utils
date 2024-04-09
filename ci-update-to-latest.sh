@@ -43,6 +43,7 @@ while read line; do
 	fi
 done <"$CFG_FILE_NAME"
 
+git checkout -b upstream-sync
 SOURCE_ALTERED=false
 for CONFIG_NAME in $configs; do
 	echo "Processing config section: $CONFIG_NAME"
@@ -87,16 +88,17 @@ for CONFIG_NAME in $configs; do
 	latest_upstream_tag=$(git tag --sort=-creatordate | grep "$(git ls-remote --tags "$UPSTREAM_NAME" | cut -f3 -d"/")" | head -n 1)
 	echo "Latest upstream tag in $UPSTREAM_NAME: $latest_upstream_tag"
 
-	latest_merged_tag=$(git log | awk "/Merge '${DOWN_DIR//\//\\/}' from tag '(.+)'/{gsub(/'/, \"\", \$0);print \$5;exit}")
+	git fetch "$UPSTREAM_NAME" 'refs/notes/*:refs/notes/*'
+	latest_merged_tag=$(git log | awk -F'[ =]' "/upstream sync: URL='.+' SYNC_REF='(.+)' REMOTE_DIR='${REMOTE_DIR//\//\\/}' DOWN_DIR='${DOWN_DIR//\//\\/}'/ {if(lastLine == \"Notes:\"){gsub(/'/, \"\", \$0); print \$10}};{lastLine = \$0}")
 	if [[ -z "$latest_merged_tag" ]]; then
-		echo "Could not detect the last merged tag for local directory '$DOWN_DIR'. Exiting." >&2
-		exit 2
+		latest_merged_tag=$(git tag --sort=creatordate | grep "$(git ls-remote --tags "$UPSTREAM_NAME" | cut -f3 -d"/")" | head -n 1)
+		echo "Could not detect the last merged tag for local directory '$DOWN_DIR'. Assuming first existing tag: $latest_merged_tag." >&2
 	fi
 	echo "Latest merged tag: $latest_merged_tag"
 
 	# run the script with the latest tag
-	git checkout -b upstream-sync
-	echo "Running git-subtree-update.sh with the latest tag"
+	last_commit=$(git rev-parse --short HEAD)
+	echo "Running git-subtree-update.sh with the $latest_upstream_tag tag"
 	SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 	set +e
 	"$SCRIPT_DIR"/git-subtree-update.sh \
@@ -110,8 +112,9 @@ for CONFIG_NAME in $configs; do
 		"$OPTS"
 	set -e
 
-	if git diff-index --quiet HEAD --; then
-		echo "No changes detected, continuing."
+	new_last_commit=$(git rev-parse --short HEAD)
+	if git diff-index --quiet HEAD -- && [[ "$last_commit" == "$new_last_commit" ]]; then
+		echo "No changes detected for config $CONFIG_NAME, continuing."
 		continue
 	fi
 
@@ -122,13 +125,12 @@ for CONFIG_NAME in $configs; do
 		./post-hook.sh "$CONFIG_NAME" "$REMOTE_URL" "$REMOTE_DIR" "$DOWN_DIR"
 	fi
 
-	if git status --short | grep -E "^( M|UU) "; then
+	if git status --short | grep -E "^( M| D|UU|\?\?) "; then
 		echo "Conflicts or hook created changes detected, forcing merge commit."
 		git add -A
 		git commit --no-verify -m "Merge '$DOWN_DIR' from tag '$latest_upstream_tag'"
-		git notes add -f -m "upstream sync: URL='$REMOTE_URL' SYNC_REF='$latest_upstream_tag' REMOTE_DIR='$REMOTE_DIR' DOWN_DIR='$DOWN_DIR'"
 	fi
-
+	git notes add -f -m "upstream sync: URL='$REMOTE_URL' SYNC_REF='$latest_upstream_tag' REMOTE_DIR='$REMOTE_DIR' DOWN_DIR='$DOWN_DIR'"
 done
 
 if [[ $SOURCE_ALTERED = false ]]; then
@@ -141,6 +143,7 @@ fi
 # git push origin --delete upstream-sync
 # set -e
 # git push --set-upstream origin upstream-sync
+# git push origin 'refs/notes/*'
 # if [[ -z "$REPO_NAME" ]]; then
 # 	REPO_NAME=$(gh repo view --json nameWithOwner -q ".nameWithOwner")
 # 	echo "Detected repository name: $REPO_NAME"

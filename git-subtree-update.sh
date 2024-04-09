@@ -188,7 +188,7 @@ fi
 
 set +e
 NOTES_CMD=(git notes add -f -m "\"upstream sync: URL='$REMOTE_URL' SYNC_REF='$REMOTE_REF' REMOTE_DIR='$REMOTE_DIR' DOWN_DIR='$DOWN_DIR'\"")
-SUBTREE_CMD=(git subtree "$op" "--prefix=$DOWN_DIR" "$SPLIT_BRANCH_NAME")
+SUBTREE_CMD=(git subtree "$op" "--prefix=$DOWN_DIR" -m "Merge '$DOWN_DIR' from tag '$REMOTE_REF'" "$SPLIT_BRANCH_NAME")
 # merge it
 if [[ -n "$SQUASH_OPT" ]]; then
 	SUBTREE_CMD+=("--squash")
