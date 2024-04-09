@@ -2,7 +2,7 @@
 
 BIN_NAME=$(basename "$0")
 declare -r ANNOTATE="(upstream-split) "
-declare -r OPTSTRING=":hn:r:t:d:l:m:sag"
+declare -r OPTSTRING=":hn:r:t:d:l:m:sagu"
 
 function help() {
 	echo "Usage: $BIN_NAME -n CONFIG_NAME -r REMOTE_URL -t REMOTE_REF -m LAST_MERGED_TAG -d REMOTE_DIR -l LOCAL_DIR [-a] [-g] [-s]"
@@ -19,6 +19,7 @@ function help() {
 	echo "    -a force 'add' as subtree operation (optional, defaults to auto-detect)"
 	echo "    -g force 'merge' as subtree operation (optional, defaults to auto-detect)"
 	echo "    -s include 'squash' in subtree operation"
+	echo "    -u don't annotate the commits in artificial history"
 	echo
 }
 
@@ -84,6 +85,11 @@ function parse_config() {
 			shift 1
 			continue
 			;;
+		'-u')
+			DONT_ANNOTATE=1
+			shift 1
+			continue
+			;;
 		'-h')
 			help
 			exit 0
@@ -145,9 +151,13 @@ function fetch_and_split() {
 	git fetch -n "$upstream_name" "$upstream_ref:refs/tags/$split_tag_name"
 	git checkout "$split_tag_name"
 
+	SPLIT_CMD=(git subtree split --prefix="$remote_dir" -b "$split_branch_name")
 	# split it
 	git branch -D "$split_branch_name" || true
-	git subtree split --prefix="$remote_dir" -b "$split_branch_name" --annotate="$ANNOTATE"
+	if [[ -z "$DONT_ANNOTATE" ]]; then
+		SPLIT_CMD+=("--annotate=\"$ANNOTATE\"")
+	fi
+	"${SPLIT_CMD[@]}"
 
 	# return to original branch
 	git checkout "$current_branch"
@@ -197,7 +207,7 @@ fi
 EX=$?
 if [[ "$EX" -ne 0 ]]; then
 	echo "***"
-	echo "Conflict was detected when running 'git subtree $op --prefix=$DOWN_DIR $SPLIT_BRANCH_NAME'."
+	echo "A problem (merge conflict?) was detected when running 'git subtree $op --prefix=$DOWN_DIR $SPLIT_BRANCH_NAME'."
 	echo "When you're done resolving it, do a commit using the follwowing commands:"
 	echo
 	echo "git commit -m \"Merge '$DOWN_DIR' from tag '$REMOTE_REF'\""
