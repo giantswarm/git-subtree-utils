@@ -155,7 +155,7 @@ function fetch_and_split() {
 	# split it
 	git branch -D "$split_branch_name" || true
 	if [[ -z "$DONT_ANNOTATE" ]]; then
-		SPLIT_CMD+=("--annotate=\"$ANNOTATE\"")
+		SPLIT_CMD+=(--annotate="$ANNOTATE")
 	fi
 	"${SPLIT_CMD[@]}"
 

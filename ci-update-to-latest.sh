@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 
 BIN_NAME=$(basename "$0")
 function help() {
@@ -59,7 +59,7 @@ while read line; do
 		declare -A "$arrname"
 		configs="$configs $arrname"
 	elif [[ $line =~ ^([_[:alpha:]][_[:alnum:]]*)"="(.*) ]]; then
-		declare ${arrname}[${BASH_REMATCH[1]}]="${BASH_REMATCH[2]}"
+		declare "${arrname}"["${BASH_REMATCH[1]}"]="${BASH_REMATCH[2]}"
 	fi
 done <"$CFG_FILE_NAME"
 
@@ -77,11 +77,6 @@ for CONFIG_NAME in $configs; do
 	fi
 	if [[ -n "${cfg["SKIP_ANNOTATE"]}" && "${cfg["SKIP_ANNOTATE"],,}" == "true" ]]; then
 		OPTS+=("-u")
-	fi
-
-	if [[ -x "pre-hook.sh" ]]; then
-		echo "Running pre-hook.sh"
-		./pre-hook.sh "$CONFIG_NAME" "$REMOTE_URL" "$REMOTE_DIR" "$DOWN_DIR"
 	fi
 
 	UPSTREAM_NAME="upstream-${CONFIG_NAME}"
@@ -122,6 +117,11 @@ for CONFIG_NAME in $configs; do
 	if [[ "$latest_upstream_tag" == "$latest_merged_tag" ]]; then
 		echo "Latest detected upstream tag $latest_upstream_tag is the same as the last merged tag $latest_merged_tag, skipping"
 		continue
+	fi
+
+	if [[ -x "pre-hook.sh" ]]; then
+		echo "Running pre-hook.sh"
+		./pre-hook.sh "$CONFIG_NAME" "$REMOTE_URL" "$REMOTE_DIR" "$DOWN_DIR"
 	fi
 
 	# run the script with the latest tag
