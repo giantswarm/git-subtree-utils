@@ -165,23 +165,23 @@ if [[ $SOURCE_ALTERED = false ]]; then
 	exit 0
 fi
 
-# echo "Creating PR on GitHub"
-# set +e
-# git push origin --delete upstream-sync
-# set -e
-# git push --set-upstream origin upstream-sync
-# git push origin 'refs/notes/*'
-# if [[ -z "$REPO_NAME" ]]; then
-# 	REPO_NAME=$(gh repo view --json nameWithOwner -q ".nameWithOwner")
-# 	echo "Detected repository name: $REPO_NAME"
-# else
-# 	echo "Using repository name: $REPO_NAME"
-# fi
-# gh pr create --title "Automated update to tag $latest_upstream_tag" \
-# 	--body "This PR updates the chart using git subtree to the latest tag in the upstream repository." \
-# 	--base main \
-# 	--head upstream-sync \
-# 	-R "$REPO_NAME"
+echo "Creating PR on GitHub"
+set +e
+git push origin --delete upstream-sync
+set -e
+git push --set-upstream origin upstream-sync
+git push origin 'refs/notes/*'
+if [[ -z "$REPO_NAME" ]]; then
+	REPO_NAME=$(gh repo view --json nameWithOwner -q ".nameWithOwner")
+	echo "Detected repository name: $REPO_NAME"
+else
+	echo "Using repository name: $REPO_NAME"
+fi
+gh pr create --title "Automated update to tag $latest_upstream_tag" \
+	--body "This PR updates the chart using git subtree to the latest tag in the upstream repository." \
+	--base main \
+	--head upstream-sync \
+	-R "$REPO_NAME"
 
 cd "$start_dir"
 echo "Done"
