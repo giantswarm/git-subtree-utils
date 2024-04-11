@@ -1,35 +1,55 @@
-#!/bin/bash -x
+#!/bin/bash
 
 BIN_NAME=$(basename "$0")
 function help() {
-	echo "Usage: $BIN_NAME"
+	echo "Usage: $BIN_NAME REPO_DIR [REPO_NAME]"
+	echo
+	echo "  REPO_DIR: the directory of the repository to update"
+	echo "  REPO_NAME: the name of the repository to push the changes to, in GitHub's 'owner/repo' format (autodetected)"
 	echo
 	echo "  Requires a config file named 'subtree-cfg.ini' with at least one config section with the following structure:"
 	echo "    [CONFIG_SECTION_NAME]"
 	echo "    REMOTE_URL=X: the URL of the upstream repository"
 	echo "    REMOTE_DIR=X: the directory in the upstream repository to extract"
 	echo "    DOWN_DIR=X: the directory in the current repository to put the subtree in"
+	echo "    SQUASH=true: whether to squash the commits (optional, defaults to false)"
+	echo "    SKIP_ANNOTATE=true: whether to skip annotating the commits (optional, defaults to false)"
 }
-
-if [[ $# -ne 0 && $# -ne 1 ]]; then
-	help
-	exit 1
-fi
 
 if [[ $# -eq 1 && ($1 == "-h" || $1 == "--help") ]]; then
 	help
 	exit 0
 fi
 
-if [[ $# -eq 1 ]]; then
-	REPO_NAME=$1
+if [[ $# -ne 1 && $# -ne 2 ]]; then
+	help
+	exit 1
 fi
+
+REPO_DIR=$1
+if [[ $# -eq 2 ]]; then
+	REPO_NAME=$2
+fi
+
+if [[ ! -d "$REPO_DIR" ]]; then
+	echo "Repository directory $REPO_DIR not found"
+	exit 2
+fi
+
+declare -r SUBTREE_SCRIPT="git-subtree-update.sh"
+start_dir=$(pwd)
+if [[ ! -x "$start_dir/$SUBTREE_SCRIPT" ]]; then
+	echo "Subtree script $start_dir/$SUBTREE_SCRIPT not found"
+	exit 3
+fi
+
+cd "$REPO_DIR" || exit 1
 
 declare -r CFG_FILE_NAME="subtree-cfg.ini"
 # parse config options
 if [[ ! -f "$CFG_FILE_NAME" ]]; then
 	echo "Config file $CFG_FILE_NAME not found"
-	exit 1
+	exit 4
 fi
 
 configs=""
@@ -39,10 +59,11 @@ while read line; do
 		declare -A "$arrname"
 		configs="$configs $arrname"
 	elif [[ $line =~ ^([_[:alpha:]][_[:alnum:]]*)"="(.*) ]]; then
-		declare ${arrname}[${BASH_REMATCH[1]}]="${BASH_REMATCH[2]}"
+		declare "${arrname}"["${BASH_REMATCH[1]}"]="${BASH_REMATCH[2]}"
 	fi
 done <"$CFG_FILE_NAME"
 
+git checkout -b upstream-sync
 SOURCE_ALTERED=false
 for CONFIG_NAME in $configs; do
 	echo "Processing config section: $CONFIG_NAME"
@@ -51,9 +72,14 @@ for CONFIG_NAME in $configs; do
 	REMOTE_URL=${cfg["REMOTE_URL"]}
 	REMOTE_DIR=${cfg["REMOTE_DIR"]}
 	DOWN_DIR=${cfg["DOWN_DIR"]}
+	if [[ -n "${cfg["SQUASH"]}" && "${cfg["SQUASH"],,}" == "true" ]]; then
+		OPTS=("-s")
+	fi
+	if [[ -n "${cfg["SKIP_ANNOTATE"]}" && "${cfg["SKIP_ANNOTATE"],,}" == "true" ]]; then
+		OPTS+=("-u")
+	fi
 
 	UPSTREAM_NAME="upstream-${CONFIG_NAME}"
-
 	set +e
 	remote_log=$(git remote show "$UPSTREAM_NAME")
 	remote_status=$?
@@ -80,44 +106,58 @@ for CONFIG_NAME in $configs; do
 	latest_upstream_tag=$(git tag --sort=-creatordate | grep "$(git ls-remote --tags "$UPSTREAM_NAME" | cut -f3 -d"/")" | head -n 1)
 	echo "Latest upstream tag in $UPSTREAM_NAME: $latest_upstream_tag"
 
-	latest_merged_tag=$(git log | awk "/Merge '${DOWN_DIR//\//\\/}' from tag '(.+)'/{gsub(/'/, \"\", \$0);print \$5;exit}")
+	git fetch "$UPSTREAM_NAME" 'refs/notes/*:refs/notes/*'
+	latest_merged_tag=$(git log | awk -F'[ =]' "/upstream sync: URL='.+' SYNC_REF='(.+)' REMOTE_DIR='${REMOTE_DIR//\//\\/}' DOWN_DIR='${DOWN_DIR//\//\\/}'/ {if(lastLine == \"Notes:\"){gsub(/'/, \"\", \$0); print \$10;exit}};{lastLine = \$0}")
 	if [[ -z "$latest_merged_tag" ]]; then
-		echo "Could not detect the last merged tag for local directory '$DOWN_DIR'. Exiting." >&2
-		exit 2
+		latest_merged_tag=$(git tag --sort=creatordate | grep "$(git ls-remote --tags "$UPSTREAM_NAME" | cut -f3 -d"/")" | head -n 1)
+		echo "Could not detect the last merged tag for local directory '$DOWN_DIR'. Assuming first existing tag: $latest_merged_tag." >&2
 	fi
 	echo "Latest merged tag: $latest_merged_tag"
 
-	# TODO: detect/configure squash
+	if [[ "$latest_upstream_tag" == "$latest_merged_tag" ]]; then
+		echo "Latest detected upstream tag $latest_upstream_tag is the same as the last merged tag $latest_merged_tag, skipping"
+		continue
+	fi
+
+	if [[ -x "pre-hook.sh" ]]; then
+		echo "Running pre-hook.sh"
+		./pre-hook.sh "$CONFIG_NAME" "$REMOTE_URL" "$REMOTE_DIR" "$DOWN_DIR"
+	fi
 
 	# run the script with the latest tag
-	git checkout -b upstream-sync
-	echo "Running git-subtree-update.sh with the latest tag"
-	SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+	last_commit=$(git rev-parse --short HEAD)
+	echo "Running git-subtree-update.sh with the $latest_upstream_tag tag"
 	set +e
-	"$SCRIPT_DIR"/git-subtree-update.sh \
+	"$start_dir"/git-subtree-update.sh \
 		-n "$CONFIG_NAME" \
 		-r "$REMOTE_URL" \
 		-t "$latest_upstream_tag" \
 		-d "$REMOTE_DIR" \
 		-l "$DOWN_DIR" \
 		-m "$latest_merged_tag" \
-		-g
+		-g \
+		"${OPTS[@]}"
 	set -e
 
-	if git diff-index --quiet HEAD --; then
-		echo "No changes detected, continuing."
+	new_last_commit=$(git rev-parse --short HEAD)
+	if git diff-index --quiet HEAD -- && [[ "$last_commit" == "$new_last_commit" ]]; then
+		echo "No changes detected for config $CONFIG_NAME, continuing."
 		continue
 	fi
 
 	SOURCE_ALTERED=true
 
-	if git status --short | grep "^UU "; then
-		echo "Conflicts detected, forcing merge commit."
-		git add -A
-		git commit --no-verify -m "Merge '$DOWN_DIR' from tag '$latest_upstream_tag'"
-		git notes add -f -m "upstream sync: URL='$REMOTE_URL' SYNC_REF='$latest_upstream_tag' REMOTE_DIR='$REMOTE_DIR' DOWN_DIR='$DOWN_DIR'"
+	if [[ -x "post-hook.sh" ]]; then
+		echo "Running post-hook.sh"
+		./post-hook.sh "$CONFIG_NAME" "$REMOTE_URL" "$REMOTE_DIR" "$DOWN_DIR"
 	fi
 
+	if git status --short | grep -E "^( M| D|UU|\?\?) "; then
+		echo "Conflicts or hook created changes detected, forcing merge commit."
+		git add -A
+		git commit --no-verify -m "Merge '$DOWN_DIR' from tag '$latest_upstream_tag'"
+	fi
+	git notes add -f -m "upstream sync: URL='$REMOTE_URL' SYNC_REF='$latest_upstream_tag' REMOTE_DIR='$REMOTE_DIR' DOWN_DIR='$DOWN_DIR'"
 done
 
 if [[ $SOURCE_ALTERED = false ]]; then
@@ -130,6 +170,7 @@ set +e
 git push origin --delete upstream-sync
 set -e
 git push --set-upstream origin upstream-sync
+git push origin 'refs/notes/*'
 if [[ -z "$REPO_NAME" ]]; then
 	REPO_NAME=$(gh repo view --json nameWithOwner -q ".nameWithOwner")
 	echo "Detected repository name: $REPO_NAME"
@@ -141,4 +182,6 @@ gh pr create --title "Automated update to tag $latest_upstream_tag" \
 	--base main \
 	--head upstream-sync \
 	-R "$REPO_NAME"
+
+cd "$start_dir"
 echo "Done"
