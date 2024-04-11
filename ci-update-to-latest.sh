@@ -102,7 +102,7 @@ for CONFIG_NAME in $configs; do
 	fi
 
 	# detect latest tags
-	git fetch "$UPSTREAM_NAME" --tags
+	git fetch "$UPSTREAM_NAME" --tags --force
 	latest_upstream_tag=$(git tag --sort=-creatordate | grep "$(git ls-remote --tags "$UPSTREAM_NAME" | cut -f3 -d"/")" | head -n 1)
 	echo "Latest upstream tag in $UPSTREAM_NAME: $latest_upstream_tag"
 
