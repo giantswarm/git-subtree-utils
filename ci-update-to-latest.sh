@@ -121,7 +121,7 @@ for CONFIG_NAME in $configs; do
 
 	if [[ -x "pre-hook.sh" ]]; then
 		echo "Running pre-hook.sh"
-		./pre-hook.sh "$CONFIG_NAME" "$REMOTE_URL" "$REMOTE_DIR" "$DOWN_DIR"
+		./pre-hook.sh "$CONFIG_NAME" "$REMOTE_URL" "$REMOTE_DIR" "$DOWN_DIR" "$latest_upstream_tag" "$latest_merged_tag"
 	fi
 
 	# run the script with the latest tag
@@ -149,7 +149,7 @@ for CONFIG_NAME in $configs; do
 
 	if [[ -x "post-hook.sh" ]]; then
 		echo "Running post-hook.sh"
-		./post-hook.sh "$CONFIG_NAME" "$REMOTE_URL" "$REMOTE_DIR" "$DOWN_DIR"
+		./post-hook.sh "$CONFIG_NAME" "$REMOTE_URL" "$REMOTE_DIR" "$DOWN_DIR" "$latest_upstream_tag" "$latest_merged_tag"
 	fi
 
 	if git status --short | grep -E "^( M| D|UU|\?\?) "; then
