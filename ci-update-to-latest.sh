@@ -166,7 +166,7 @@ if [[ $SOURCE_ALTERED = false ]]; then
 fi
 
 PR_TITLE="subtree-utils: automated update from $latest_merged_tag to tag $latest_upstream_tag"
-search_res=$(gh pr list -R giantswarm/crossplane --search "author:app/github-actions $PR_TITLE" --json title | jq '. == []')
+search_res=$(gh pr list -R "$REPO_NAME" --search "author:app/github-actions $PR_TITLE" --json title | jq '. == []')
 if [[ "$search_res" == "false" ]]; then
 	echo "PR already exists, exiting."
 	exit 0
