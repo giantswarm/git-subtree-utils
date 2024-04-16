@@ -14,6 +14,7 @@ function help() {
 	echo "    DOWN_DIR=X: the directory in the current repository to put the subtree in"
 	echo "    SQUASH=true: whether to squash the commits (optional, defaults to false)"
 	echo "    SKIP_ANNOTATE=true: whether to skip annotating the commits (optional, defaults to false)"
+	echo "    TAGS_FILTER='helm-.*': filter discovered upstream charts only to the ones matching this extended grep expression (optional, default: '.*')"
 }
 
 if [[ $# -eq 1 && ($1 == "-h" || $1 == "--help") ]]; then
@@ -78,6 +79,11 @@ for CONFIG_NAME in $configs; do
 	if [[ -n "${cfg["SKIP_ANNOTATE"]}" && "${cfg["SKIP_ANNOTATE"],,}" == "true" ]]; then
 		OPTS+=("-u")
 	fi
+	if [[ -n "${cfg["TAGS_FILTER"]}" ]]; then
+		TAGS_FILTER=${cfg["TAGS_FILTER"]}
+	else
+		TAGS_FILTER=".*"
+	fi
 
 	UPSTREAM_NAME="upstream-${CONFIG_NAME}"
 	set +e
@@ -103,8 +109,8 @@ for CONFIG_NAME in $configs; do
 
 	# detect latest tags
 	git fetch "$UPSTREAM_NAME" --tags --force
-	latest_upstream_tag=$(git tag --sort=-creatordate | grep "$(git ls-remote --tags "$UPSTREAM_NAME" | cut -f3 -d"/")" | head -n 1)
-	echo "Latest upstream tag in $UPSTREAM_NAME: $latest_upstream_tag"
+	latest_upstream_tag=$(git tag --sort=-creatordate | grep "$(git ls-remote --tags "$UPSTREAM_NAME" | cut -f3 -d"/")" | grep -E "$TAGS_FILTER" | head -n 1)
+	echo "Latest upstream tag matching filter \"$TAGS_FILTER\" in upstream \"$UPSTREAM_NAME\": $latest_upstream_tag"
 
 	git fetch "$UPSTREAM_NAME" 'refs/notes/*:refs/notes/*'
 	latest_merged_tag=$(git log | awk -F'[ =]' "/upstream sync: URL='.+' SYNC_REF='(.+)' REMOTE_DIR='${REMOTE_DIR//\//\\/}' DOWN_DIR='${DOWN_DIR//\//\\/}'/ {if(lastLine == \"Notes:\"){gsub(/'/, \"\", \$0); print \$10;exit}};{lastLine = \$0}")
