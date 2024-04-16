@@ -165,6 +165,13 @@ if [[ $SOURCE_ALTERED = false ]]; then
 	exit 0
 fi
 
+PR_TITLE="subtree-utils: automated update from $latest_merged_tag to tag $latest_upstream_tag"
+search_res=$(gh pr list -R giantswarm/crossplane --search "author:app/github-actions $PR_TITLE" --json title | jq '. == []')
+if [[ "$search_res" == "false" ]]; then
+	echo "PR already exists, exiting."
+	exit 0
+fi
+
 echo "Creating PR on GitHub"
 set +e
 git push origin --delete upstream-sync
@@ -177,7 +184,7 @@ if [[ -z "$REPO_NAME" ]]; then
 else
 	echo "Using repository name: $REPO_NAME"
 fi
-gh pr create --title "Automated update to tag $latest_upstream_tag" \
+gh pr create --title "$PR_TITLE" \
 	--body "This PR updates the chart using git subtree to the latest tag in the upstream repository." \
 	--base main \
 	--head upstream-sync \
