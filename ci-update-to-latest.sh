@@ -38,7 +38,7 @@ if [[ ! -d "$REPO_DIR" ]]; then
 fi
 
 declare -r SUBTREE_SCRIPT="git-subtree-update.sh"
-start_dir=$(pwd)
+start_dir=$( dirname -- "$( readlink -f -- "$0"; )"; )
 if [[ ! -x "$start_dir/$SUBTREE_SCRIPT" ]]; then
 	echo "Subtree script $start_dir/$SUBTREE_SCRIPT not found"
 	exit 3
