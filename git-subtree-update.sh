@@ -2,7 +2,7 @@
 
 BIN_NAME=$(basename "$0")
 declare -r ANNOTATE="(upstream-split) "
-declare -r OPTSTRING=":hn:r:t:d:l:m:sagu"
+declare -r OPTSTRING=":hn:r:t:d:l:m:saguv"
 
 function help() {
 	echo "Usage: $BIN_NAME -n CONFIG_NAME -r REMOTE_URL -t REMOTE_REF -m LAST_MERGED_TAG -d REMOTE_DIR -l LOCAL_DIR [-a] [-g] [-s]"
@@ -20,6 +20,7 @@ function help() {
 	echo "    -g force 'merge' as subtree operation (optional, defaults to auto-detect)"
 	echo "    -s include 'squash' in subtree operation"
 	echo "    -u don't annotate the commits in artificial history"
+	echo "    -v verbose run with bash set -x"
 	echo
 }
 
@@ -90,6 +91,11 @@ function parse_config() {
 			shift 1
 			continue
 			;;
+		'-v')
+			set -x
+			shift 1
+			continue
+			;;
 		'-h')
 			help
 			exit 0
@@ -137,6 +143,24 @@ function parse_config() {
 	fi
 }
 
+function run_and_log_on_error() {
+	local stdout_file stderr_file
+	stdout_file=$(mktemp)
+	stderr_file=$(mktemp)
+	
+	"$@" >"$stdout_file" 2>"$stderr_file"
+	local ec=$?
+	
+	if [[ $ec -ne 0 ]]; then
+		echo "Error running command: $*" >&2
+		cat "$stdout_file"
+		cat "$stderr_file" >&2
+	fi
+	
+	rm -f "$stdout_file" "$stderr_file"
+	return $ec
+}
+
 function fetch_and_split() {
 	local upstream_name=$1
 	local upstream_ref=$2
@@ -147,17 +171,21 @@ function fetch_and_split() {
 	local current_branch
 	current_branch=$(git rev-parse --abbrev-ref HEAD)
 	# fetch upstream and the configured tag
-	git tag -d "$split_tag_name" || true
-	git fetch -n "$upstream_name" "$upstream_ref:refs/tags/$split_tag_name"
-	git checkout "$split_tag_name"
+	echo -n "Fetching upstream ref '$upstream_ref' to local ref. Please wait..."
+	git tag -d "$split_tag_name" >/dev/null 2>&1 || true
+	run_and_log_on_error git fetch -n "$upstream_name" "$upstream_ref:refs/tags/$split_tag_name"
+	run_and_log_on_error git checkout "$split_tag_name"
+	echo "done"
 
 	SPLIT_CMD=(git subtree split --prefix="$remote_dir" -b "$split_branch_name")
 	# split it
-	git branch -D "$split_branch_name" || true
+	git branch -D "$split_branch_name" >/dev/null 2>&1 || true
 	if [[ -z "$DONT_ANNOTATE" ]]; then
 		SPLIT_CMD+=(--annotate="$ANNOTATE")
 	fi
-	"${SPLIT_CMD[@]}"
+	echo -n "Splitting branch '$split_branch_name' to check previous merge. Please wait..."
+	run_and_log_on_error "${SPLIT_CMD[@]}"
+	echo "done"
 
 	# return to original branch
 	git checkout "$current_branch"
@@ -180,7 +208,7 @@ fi
 
 UPSTREAM_NAME="upstream-${CONFIG_NAME}"
 # check if upstream exists and add it if not
-git remote | grep "$UPSTREAM_NAME" || git remote add "$UPSTREAM_NAME" "$REMOTE_URL"
+git remote | grep "$UPSTREAM_NAME" >/dev/null 2>&1 || git remote add "$UPSTREAM_NAME" "$REMOTE_URL"
 
 fetch_and_split "$UPSTREAM_NAME" "$REMOTE_REF" "$SPLIT_BRANCH_NAME" "$SPLIT_TAG_NAME" "$REMOTE_DIR"
 fetch_and_split "$UPSTREAM_NAME" "$LAST_MERGED_TAG" "$OLD_SPLIT_BRANCH_NAME" "$OLD_SPLIT_TAG_NAME" "$REMOTE_DIR"
@@ -203,6 +231,8 @@ SUBTREE_CMD=(git subtree "$op" "--prefix=$DOWN_DIR" -m "Merge '$DOWN_DIR' from t
 if [[ -n "$SQUASH_OPT" ]]; then
 	SUBTREE_CMD+=("--squash")
 fi
+
+echo "Executing merge command: ${SUBTREE_CMD[*]}"
 "${SUBTREE_CMD[@]}"
 EX=$?
 if [[ "$EX" -ne 0 ]]; then
