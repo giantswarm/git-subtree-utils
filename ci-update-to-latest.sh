@@ -112,7 +112,6 @@ for CONFIG_NAME in $configs; do
 	latest_upstream_tag=$(git tag --sort=-creatordate | grep "$(git ls-remote --tags "$UPSTREAM_NAME" | cut -f3 -d"/")" | grep -E "$TAGS_FILTER" | head -n 1)
 	echo "Latest upstream tag matching filter \"$TAGS_FILTER\" in upstream \"$UPSTREAM_NAME\": $latest_upstream_tag"
 
-	git fetch "$UPSTREAM_NAME" 'refs/notes/*:refs/notes/*'
 	latest_merged_tag=$(git log | awk -F'[ =]' "/upstream sync: URL='.+' SYNC_REF='(.+)' REMOTE_DIR='${REMOTE_DIR//\//\\/}' DOWN_DIR='${DOWN_DIR//\//\\/}'/ {if(lastLine == \"Notes:\"){gsub(/'/, \"\", \$0); print \$10;exit}};{lastLine = \$0}")
 	if [[ -z "$latest_merged_tag" ]]; then
 		latest_merged_tag=$(git tag --sort=creatordate | grep "$(git ls-remote --tags "$UPSTREAM_NAME" | cut -f3 -d"/")" | head -n 1)
